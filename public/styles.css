@@ -27,7 +27,7 @@ body {
     var(--bg);
   color: var(--ink);
   font-family: Manrope, "Segoe UI", sans-serif;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.45;
 }
 
@@ -73,7 +73,7 @@ h1, h2, h3, .hero-num, .amt, .stat b, .debt-top b, .compare-num, .brand strong {
 
 .gate-card h1 {
   margin: 14px 0 8px;
-  font-size: 1.7rem;
+  font-size: 1.15rem;
   letter-spacing: -0.04em;
 }
 
@@ -95,7 +95,7 @@ h1, h2, h3, .hero-num, .amt, .stat b, .debt-top b, .compare-num, .brand strong {
 .auth-google { background: #fff; color: #111; }
 .auth-apple { background: #111; color: #fff; border: 1px solid #3a3a44; }
 
-.brand strong { display: block; font-size: 1.15rem; letter-spacing: -0.03em; }
+.brand strong { display: block; font-size: 1rem; letter-spacing: -0.02em; }
 .brand-sub { margin: 0; color: var(--lime); font-size: 0.82rem; font-weight: 700; }
 
 .brand-mark {
@@ -108,7 +108,7 @@ h1, h2, h3, .hero-num, .amt, .stat b, .debt-top b, .compare-num, .brand strong {
   color: #111;
   border-radius: 14px;
   font-family: "Bricolage Grotesque", sans-serif;
-  font-size: 1.35rem;
+  font-size: 1.1rem;
   font-weight: 700;
 }
 
@@ -142,7 +142,7 @@ h1, h2, h3, .hero-num, .amt, .stat b, .debt-top b, .compare-num, .brand strong {
 
 .monthbar h1 {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: 1.05rem;
   letter-spacing: -0.03em;
 }
 
@@ -217,15 +217,15 @@ h1, h2, h3, .hero-num, .amt, .stat b, .debt-top b, .compare-num, .brand strong {
 
 .hero-num, .compare-num {
   margin: 6px 0 8px;
-  font-size: clamp(1.7rem, 6vw, 2.3rem);
+  font-size: clamp(1.25rem, 4vw, 1.6rem);
   line-height: 0.92;
   letter-spacing: -0.05em;
   font-variant-numeric: tabular-nums;
 }
 
-.compare-num { font-size: clamp(1.35rem, 4vw, 1.8rem); }
+.compare-num { font-size: clamp(1.05rem, 3vw, 1.3rem); }
 
-.hero-text { font-size: clamp(1.35rem, 4vw, 1.8rem); }
+.hero-text { font-size: clamp(1.05rem, 3vw, 1.3rem); }
 
 .detail, .hint, .meta { color: var(--muted); }
 .detail { margin: 0; }
@@ -233,7 +233,7 @@ h1, h2, h3, .hero-num, .amt, .stat b, .debt-top b, .compare-num, .brand strong {
 
 h2 {
   margin: 0 0 12px;
-  font-size: 1.15rem;
+  font-size: 1rem;
   letter-spacing: -0.03em;
 }
 
@@ -261,7 +261,7 @@ h2 {
 .stat b {
   display: block;
   margin-top: 4px;
-  font-size: clamp(1rem, 2.4vw, 1.25rem);
+  font-size: 0.95rem;
   font-variant-numeric: tabular-nums;
 }
 
@@ -394,7 +394,7 @@ input:focus-visible, button:focus-visible {
 .meta { margin: 2px 0 0; font-size: 0.85rem; }
 
 .amt {
-  font-size: 1.15rem;
+  font-size: 0.95rem;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -442,8 +442,8 @@ input:focus-visible, button:focus-visible {
   align-items: baseline;
 }
 
-.debt-top h3 { margin: 0; font-size: 1.2rem; }
-.debt-top b { font-size: 1.35rem; font-variant-numeric: tabular-nums; }
+.debt-top h3 { margin: 0; font-size: 1rem; }
+.debt-top b { font-size: 1rem; font-variant-numeric: tabular-nums; }
 .plan { margin: 10px 0; font-weight: 700; }
 .bad-text { color: var(--pink); font-weight: 700; }
 
