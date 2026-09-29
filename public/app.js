@@ -156,6 +156,14 @@ function isBlankLedger(data) {
 
 function saveState() {
   if (!currentUser) return;
+  if (currentUser.provider === "local") {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch {
+      toast("Kayıt bu tarayıcıya yazılamadı.");
+    }
+    return;
+  }
   const snapshot = JSON.parse(JSON.stringify(state));
   saveChain = saveChain.then(() => persistLedger(snapshot)).catch(() => {});
 }
@@ -658,7 +666,7 @@ function renderSettings() {
       </section>
       <section class="card">
         <h2>Yedek</h2>
-        <p class="hint">Kayıtlar bu hesaba yazılır${currentUser?.email ? ` (${esc(currentUser.email)})` : ""}. İstediğin cihazdan aynı hesapla girince aynı defteri görürsün. Yine de arada bir yedek indir.</p>
+        <p class="hint">${currentUser?.provider === "local" ? "Kayıtlar bu tarayıcıda durur. Başka cihazda görmek için yedeği indir, orada içe aktar." : `Kayıtlar bu hesaba yazılır${currentUser?.email ? ` (${esc(currentUser.email)})` : ""}. İstediğin cihazdan aynı hesapla girince aynı defteri görürsün. Yine de arada bir yedek indir.`}</p>
         <div class="actions">
           <button type="button" class="btn btn-primary" data-export>Dışa aktar</button>
           <button type="button" class="btn btn-ghost" data-import>İçe aktar</button>
@@ -1035,6 +1043,16 @@ function showGate(message, providers) {
   if (dev) dev.hidden = !providers?.dev;
 }
 
+function openLocal() {
+  currentUser = { name: "bu tarayıcı", email: "", provider: "local" };
+  state = loadState();
+  document.getElementById("gate").hidden = true;
+  document.getElementById("app").hidden = false;
+  const logout = document.getElementById("logout");
+  if (logout) logout.hidden = true;
+  render();
+}
+
 async function boot() {
   const params = new URLSearchParams(location.search);
   let me;
@@ -1043,7 +1061,7 @@ async function boot() {
     if (!response.ok) throw new Error("me");
     me = await response.json();
   } catch {
-    showGate("Hesaba girmek için siteyi sunucu adresiyle aç.");
+    openLocal();
     return;
   }
   if (!me.user) {
