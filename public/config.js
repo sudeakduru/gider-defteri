@@ -1,4 +1,5 @@
 window.GIDER_CONFIG = {
-  supabaseUrl: "",
-  supabaseAnonKey: "",
+  appleClientId: "com.giderdefteri.web",
+  googleClientId: "",
+  redirectURI: "https://sudeakduru.github.io/gider-defteri/",
 };

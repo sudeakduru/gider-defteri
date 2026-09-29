@@ -165,6 +165,14 @@ function saveState() {
     saveChain = saveChain.then(() => persistSupabase(snapshot)).catch(() => {});
     return;
   }
+  if (currentUser.provider === "google" || currentUser.provider === "apple") {
+    try {
+      localStorage.setItem(accountKey(currentUser), JSON.stringify(state));
+    } catch {
+      toast("Kayıt bu tarayıcıya yazılamadı.");
+    }
+    return;
+  }
   const snapshot = JSON.parse(JSON.stringify(state));
   saveChain = saveChain.then(() => persistLedger(snapshot)).catch(() => {});
 }
@@ -212,41 +220,61 @@ async function enterSupabaseUser(user) {
   render();
 }
 
-async function startProvider(provider) {
-  const label = provider === "apple" ? "Apple" : "Google";
-  const db = supabaseClient();
-  if (!db) {
-    const message = `${label} penceresi açılamıyor. Kayıtların duracağı ortak sunucu henüz bağlanmadı.`;
-    showGate(message, { google: true, apple: true });
-    window.alert(message);
+function redirectUri() {
+  if (authConfig().redirectURI) return authConfig().redirectURI;
+  const url = new URL(location.href);
+  url.hash = "";
+  url.search = "";
+  url.pathname = url.pathname.replace(/index\.html$/, "");
+  if (!url.pathname.endsWith("/")) url.pathname += "/";
+  return url.origin + url.pathname;
+}
+
+function beginOAuth(provider) {
+  const state = crypto.randomUUID();
+  const nonce = crypto.randomUUID();
+  sessionStorage.setItem("oauth-state", state);
+  sessionStorage.setItem("oauth-nonce", nonce);
+  sessionStorage.setItem("oauth-provider", provider);
+  return { state, nonce };
+}
+
+function startGoogle() {
+  const clientId = authConfig().googleClientId;
+  if (!clientId) {
+    window.alert("Google ekranı için Google istemci kimliği gerekiyor.");
     return;
   }
-  const note = document.getElementById("login-note");
-  if (note) {
-    note.hidden = false;
-    note.textContent = `${label} açılıyor...`;
+  const { state, nonce } = beginOAuth("google");
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri(),
+    response_type: "id_token",
+    response_mode: "fragment",
+    scope: "openid email profile",
+    prompt: "select_account",
+    nonce,
+    state,
+  });
+  window.location.assign(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+}
+
+function startApple() {
+  const clientId = authConfig().appleClientId;
+  if (!clientId) {
+    window.alert("Apple ekranı için Apple Services kimliği gerekiyor.");
+    return;
   }
-  try {
-    const { data, error } = await db.auth.signInWithOAuth({
-      provider,
-      options: {
-        redirectTo: `${location.origin}${location.pathname}`,
-        skipBrowserRedirect: true,
-        queryParams: provider === "google" ? { prompt: "select_account" } : undefined,
-      },
-    });
-    if (error || !data?.url) {
-      const message = `${label} penceresi açılamadı. Supabase içinde ${label} girişi açılmalı.`;
-      showGate(message, { google: true, apple: true });
-      window.alert(message);
-      return;
-    }
-    window.location.assign(data.url);
-  } catch {
-    const message = `${label} penceresi açılamadı. Bağlantıyı kontrol et.`;
-    showGate(message, { google: true, apple: true });
-    window.alert(message);
-  }
+  const { state, nonce } = beginOAuth("apple");
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri(),
+    response_type: "id_token",
+    response_mode: "fragment",
+    nonce,
+    state,
+  });
+  window.location.assign(`https://appleid.apple.com/auth/authorize?${params}`);
 }
 
 function accountKey(user) {
@@ -320,14 +348,6 @@ function enterClientAccount(user) {
   const logout = document.getElementById("logout");
   if (logout) logout.hidden = false;
   render();
-}
-
-async function startGoogle() {
-  await startProvider("google");
-}
-
-async function startApple() {
-  await startProvider("apple");
 }
 
 async function persistLedger(snapshot) {
@@ -1272,7 +1292,39 @@ function openClientGate(message) {
   showGate(message || "Google veya Apple hesabınla kaydol. Çıkış yapınca başka hesapla girebilirsin.", { google: true, apple: true });
 }
 
+function consumeOAuthReturn() {
+  const hash = new URLSearchParams(location.hash.startsWith("#") ? location.hash.slice(1) : "");
+  const search = new URLSearchParams(location.search);
+  const error = hash.get("error") || search.get("error");
+  if (error) {
+    history.replaceState({}, "", `${location.pathname}${location.search.replace(/[?&]error=[^&]*/g, "")}`);
+    showGate("Apple girişi tamamlanmadı. Apple bu siteyi henüz tanımıyor.", { google: true, apple: true });
+    return true;
+  }
+  const idToken = hash.get("id_token");
+  if (!idToken) return false;
+  if (hash.get("state") !== sessionStorage.getItem("oauth-state")) return false;
+  let payload;
+  try {
+    payload = parseJwt(idToken);
+  } catch {
+    return false;
+  }
+  const nonce = sessionStorage.getItem("oauth-nonce");
+  if (nonce && payload.nonce && payload.nonce !== nonce) return false;
+  const provider = sessionStorage.getItem("oauth-provider") || "apple";
+  history.replaceState({}, "", location.pathname);
+  enterClientAccount({
+    id: payload.sub,
+    email: payload.email || "",
+    name: payload.name || payload.email || (provider === "apple" ? "Apple hesabı" : "Google hesabı"),
+    provider,
+  });
+  return true;
+}
+
 async function boot() {
+  if (consumeOAuthReturn()) return;
   const params = new URLSearchParams(location.search);
   const db = supabaseClient();
   if (db) {
