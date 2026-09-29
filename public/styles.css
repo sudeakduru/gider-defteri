@@ -77,7 +77,14 @@ h1, h2, h3, .hero-num, .amt, .stat b, .debt-top b, .compare-num, .brand strong {
   letter-spacing: -0.04em;
 }
 
-.gate-card .hint { margin-bottom: 18px; }
+.login-note {
+  margin: 0 0 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #2a1020;
+  color: #ffd0e0;
+  font-weight: 700;
+}
 
 .auth-btn {
   display: flex;

@@ -213,19 +213,40 @@ async function enterSupabaseUser(user) {
 }
 
 async function startProvider(provider) {
+  const label = provider === "apple" ? "Apple" : "Google";
   const db = supabaseClient();
   if (!db) {
-    showGate("Ortak sunucu henüz bağlı değil. Supabase adresini ve anahtarını ekleyince kayıtlar orada durur.", { google: true, apple: true });
+    const message = `${label} penceresi açılamıyor. Kayıtların duracağı ortak sunucu henüz bağlanmadı.`;
+    showGate(message, { google: true, apple: true });
+    window.alert(message);
     return;
   }
-  const { error } = await db.auth.signInWithOAuth({
-    provider,
-    options: {
-      redirectTo: `${location.origin}${location.pathname}`,
-      queryParams: provider === "google" ? { prompt: "select_account" } : undefined,
-    },
-  });
-  if (error) showGate("Giriş açılamadı. Supabase tarafında bu sağlayıcıyı açmak gerekiyor.", { google: true, apple: true });
+  const note = document.getElementById("login-note");
+  if (note) {
+    note.hidden = false;
+    note.textContent = `${label} açılıyor...`;
+  }
+  try {
+    const { data, error } = await db.auth.signInWithOAuth({
+      provider,
+      options: {
+        redirectTo: `${location.origin}${location.pathname}`,
+        skipBrowserRedirect: true,
+        queryParams: provider === "google" ? { prompt: "select_account" } : undefined,
+      },
+    });
+    if (error || !data?.url) {
+      const message = `${label} penceresi açılamadı. Supabase içinde ${label} girişi açılmalı.`;
+      showGate(message, { google: true, apple: true });
+      window.alert(message);
+      return;
+    }
+    window.location.assign(data.url);
+  } catch {
+    const message = `${label} penceresi açılamadı. Bağlantıyı kontrol et.`;
+    showGate(message, { google: true, apple: true });
+    window.alert(message);
+  }
 }
 
 function accountKey(user) {
