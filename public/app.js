@@ -44,6 +44,7 @@ const VIEWS = {
   fixed: renderFixed,
   debts: renderDebts,
   settings: renderSettings,
+  people: renderPeople,
 };
 
 let state = defaultState();
@@ -51,6 +52,8 @@ let ui = loadUi();
 let toastTimer = 0;
 let currentUser = null;
 let saveChain = Promise.resolve();
+let isOwner = false;
+let peopleRows = null;
 
 function uid() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
@@ -157,24 +160,72 @@ function isBlankLedger(data) {
 
 function saveState() {
   if (!currentUser) return;
-  if (currentUser.provider === "google" || currentUser.provider === "apple") {
-    try {
-      localStorage.setItem(accountKey(currentUser), JSON.stringify(state));
-    } catch {
-      toast("Kayıt bu tarayıcıya yazılamadı.");
-    }
-    return;
-  }
-  if (currentUser.provider === "local") {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {
-      toast("Kayıt bu tarayıcıya yazılamadı.");
-    }
+  if (currentUser.remote) {
+    const snapshot = JSON.parse(JSON.stringify(state));
+    saveChain = saveChain.then(() => persistSupabase(snapshot)).catch(() => {});
     return;
   }
   const snapshot = JSON.parse(JSON.stringify(state));
   saveChain = saveChain.then(() => persistLedger(snapshot)).catch(() => {});
+}
+
+function supabaseClient() {
+  const { supabaseUrl, supabaseAnonKey } = authConfig();
+  if (!supabaseUrl || !supabaseAnonKey || !window.supabase?.createClient) return null;
+  if (!supabaseClient.db) supabaseClient.db = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
+  return supabaseClient.db;
+}
+
+async function persistSupabase(snapshot) {
+  const db = supabaseClient();
+  if (!db || !currentUser?.id) return;
+  const { error } = await db.from("ledgers").upsert({
+    user_id: currentUser.id,
+    email: currentUser.email,
+    name: currentUser.name,
+    provider: currentUser.provider,
+    data: snapshot,
+    updated_at: new Date().toISOString(),
+  });
+  if (error) toast("Kayıt sunucuya yazılamadı.");
+}
+
+async function enterSupabaseUser(user) {
+  currentUser = {
+    id: user.id,
+    email: user.email || "",
+    name: user.user_metadata?.full_name || user.user_metadata?.name || user.email || "Hesap",
+    provider: user.app_metadata?.provider || "google",
+    remote: true,
+  };
+  const db = supabaseClient();
+  const { data } = await db.from("ledgers").select("data").eq("user_id", user.id).maybeSingle();
+  state = data?.data ? normalizeState(data.data) : defaultState();
+  const owner = await db.rpc("is_owner");
+  isOwner = owner.data === true;
+  const nav = document.getElementById("nav-people");
+  if (nav) nav.hidden = !isOwner;
+  document.getElementById("gate").hidden = true;
+  document.getElementById("app").hidden = false;
+  const logout = document.getElementById("logout");
+  if (logout) logout.hidden = false;
+  render();
+}
+
+async function startProvider(provider) {
+  const db = supabaseClient();
+  if (!db) {
+    showGate("Ortak sunucu henüz bağlı değil. Supabase adresini ve anahtarını ekleyince kayıtlar orada durur.", { google: true, apple: true });
+    return;
+  }
+  const { error } = await db.auth.signInWithOAuth({
+    provider,
+    options: {
+      redirectTo: `${location.origin}${location.pathname}`,
+      queryParams: provider === "google" ? { prompt: "select_account" } : undefined,
+    },
+  });
+  if (error) showGate("Giriş açılamadı. Supabase tarafında bu sağlayıcıyı açmak gerekiyor.", { google: true, apple: true });
 }
 
 function accountKey(user) {
@@ -251,66 +302,11 @@ function enterClientAccount(user) {
 }
 
 async function startGoogle() {
-  const clientId = authConfig().googleClientId;
-  if (!clientId) {
-    showGate("Google kaydı için bir Google istemci anahtarı gerekiyor. Anahtar eklenince bu düğme hesabı açar.", { google: true, apple: true });
-    return;
-  }
-  await loadScript("https://accounts.google.com/gsi/client");
-  const client = window.google.accounts.oauth2.initTokenClient({
-    client_id: clientId,
-    scope: "openid email profile",
-    prompt: "select_account",
-    callback: async (tokenResponse) => {
-      if (!tokenResponse.access_token) {
-        showGate("Google girişi tamamlanamadı. Tekrar dene.", { google: true, apple: true });
-        return;
-      }
-      const profile = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-        headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
-      }).then((response) => response.json());
-      if (!profile.sub) {
-        showGate("Google hesabı okunamadı.", { google: true, apple: true });
-        return;
-      }
-      enterClientAccount({
-        id: profile.sub,
-        email: profile.email || "",
-        name: profile.name || profile.email || "Google hesabı",
-        provider: "google",
-      });
-    },
-  });
-  client.requestAccessToken();
+  await startProvider("google");
 }
 
 async function startApple() {
-  const clientId = authConfig().appleClientId;
-  if (!clientId) {
-    showGate("Apple kaydı için bir Apple istemci anahtarı gerekiyor. Anahtar eklenince bu düğme hesabı açar.", { google: true, apple: true });
-    return;
-  }
-  await loadScript("https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/tr_TR/appleid.auth.js");
-  window.AppleID.auth.init({
-    clientId,
-    scope: "name email",
-    redirectURI: authConfig().appleRedirectURI || location.href.split("?")[0],
-    usePopup: true,
-  });
-  try {
-    const result = await window.AppleID.auth.signIn();
-    const payload = parseJwt(result.authorization.id_token);
-    const given = result.user?.name;
-    const name = [given?.firstName, given?.lastName].filter(Boolean).join(" ");
-    enterClientAccount({
-      id: payload.sub,
-      email: payload.email || "",
-      name: name || payload.email || "Apple hesabı",
-      provider: "apple",
-    });
-  } catch {
-    showGate("Apple girişi tamamlanamadı. Tekrar dene.", { google: true, apple: true });
-  }
+  await startProvider("apple");
 }
 
 async function persistLedger(snapshot) {
@@ -811,7 +807,7 @@ function renderSettings() {
       </section>
       <section class="card">
         <h2>Yedek</h2>
-        <p class="hint">${currentUser?.provider === "google" || currentUser?.provider === "apple" ? `Bu defter ${esc(currentUser.name || "bu hesaba")} ait. Çıkış yapınca başka hesapla girince onun defteri açılır.` : currentUser?.provider === "local" ? "Kayıtlar bu tarayıcıda durur. Başka cihazda görmek için yedeği indir, orada içe aktar." : `Kayıtlar bu hesaba yazılır${currentUser?.email ? ` (${esc(currentUser.email)})` : ""}. İstediğin cihazdan aynı hesapla girince aynı defteri görürsün. Yine de arada bir yedek indir.`}</p>
+        <p class="hint">${currentUser?.remote ? "Kayıtlar ortak sunucuda durur. Tarayıcıyı kapatsan da silinmez. Çıkış yapınca başka hesapla girince onun defteri açılır." : `Kayıtlar bu hesaba yazılır${currentUser?.email ? ` (${esc(currentUser.email)})` : ""}.`}</p>
         <div class="actions">
           <button type="button" class="btn btn-primary" data-export>Dışa aktar</button>
           <button type="button" class="btn btn-ghost" data-import>İçe aktar</button>
@@ -823,6 +819,45 @@ function renderSettings() {
   `;
 }
 
+function renderPeople() {
+  if (!peopleRows) {
+    loadPeople();
+    return `<div class="stack"><section class="card"><p class="empty">Kayıtlar yükleniyor.</p></section></div>`;
+  }
+  const rows = peopleRows.map((row) => {
+    const ledger = normalizeState(row.data || {});
+    return `
+      <li class="entry">
+        <div>
+          <div class="name">${esc(row.name || row.email || "İsimsiz")}</div>
+          <p class="meta">${esc(row.email || "")} · ${esc(row.provider || "")}</p>
+        </div>
+        <div class="amt">${esc(formatMoney(ledger.salary))} maaş</div>
+      </li>
+    `;
+  }).join("");
+  return `
+    <div class="stack">
+      <section class="card">
+        <h2>Kayıtlı hesaplar</h2>
+        <p class="hint">Bunlar ortak sunucudaki defterler. Tarayıcı kapanınca silinmez.</p>
+        ${peopleRows.length ? `<ul class="entries">${rows}</ul>` : '<p class="empty">Henüz kayıtlı hesap yok.</p>'}
+      </section>
+    </div>
+  `;
+}
+
+async function loadPeople() {
+  const db = supabaseClient();
+  if (!db) {
+    peopleRows = [];
+    return;
+  }
+  const { data } = await db.from("ledgers").select("email,name,provider,data,updated_at").order("updated_at", { ascending: false });
+  peopleRows = data || [];
+  if (ui.view === "people") render();
+}
+
 function render() {
   const [year, month] = ui.month.split("-").map(Number);
   document.getElementById("month-label").textContent = formatYearMonth(new Date(year, month - 1, 1));
@@ -830,6 +865,8 @@ function render() {
   document.getElementById("salary-link").textContent = snap.hasIncome ? `Gelir ${formatMoney(snap.income)}` : "Gelir gir";
   const account = document.getElementById("account-label");
   if (account && currentUser) account.textContent = currentUser.name || currentUser.email || "Hesabın";
+  const navPeople = document.getElementById("nav-people");
+  if (navPeople) navPeople.hidden = !isOwner;
   document.getElementById("back-today").hidden = ui.month === currentMonth();
   document.querySelectorAll(".tabbar [data-nav]").forEach((btn) => {
     const on = btn.dataset.nav === ui.view;
@@ -1027,11 +1064,14 @@ function onClick(event) {
     return;
   }
   if (event.target.closest("#logout")) {
-    if (currentUser?.provider === "google" || currentUser?.provider === "apple") {
-      localStorage.removeItem(SESSION_KEY);
-      currentUser = null;
-      state = defaultState();
-      showGate("Çıkış yapıldı. Başka bir Google veya Apple hesabıyla girebilirsin.", { google: true, apple: true });
+    const db = supabaseClient();
+    if (currentUser?.remote && db) {
+      db.auth.signOut().finally(() => {
+        currentUser = null;
+        isOwner = false;
+        state = defaultState();
+        openClientGate("Çıkış yapıldı. Başka bir hesapla girebilirsin.");
+      });
       return;
     }
     fetch("/api/logout", { method: "POST" }).finally(() => {
@@ -1213,6 +1253,16 @@ function openClientGate(message) {
 
 async function boot() {
   const params = new URLSearchParams(location.search);
+  const db = supabaseClient();
+  if (db) {
+    const { data } = await db.auth.getSession();
+    if (data.session?.user) {
+      await enterSupabaseUser(data.session.user);
+      return;
+    }
+    openClientGate("");
+    return;
+  }
   let me = null;
   try {
     const response = await fetch("/api/me", { headers: { Accept: "application/json" } });
