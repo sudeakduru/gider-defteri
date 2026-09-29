@@ -27,7 +27,7 @@ body {
     var(--bg);
   color: var(--ink);
   font-family: Manrope, "Segoe UI", sans-serif;
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1.45;
 }
 
@@ -73,7 +73,7 @@ h1, h2, h3, .hero-num, .amt, .stat b, .debt-top b, .compare-num, .brand strong {
 
 .gate-card h1 {
   margin: 14px 0 8px;
-  font-size: 2.6rem;
+  font-size: 1.7rem;
   letter-spacing: -0.04em;
 }
 
@@ -142,8 +142,8 @@ h1, h2, h3, .hero-num, .amt, .stat b, .debt-top b, .compare-num, .brand strong {
 
 .monthbar h1 {
   margin: 0;
-  font-size: 1.7rem;
-  letter-spacing: -0.04em;
+  font-size: 1.25rem;
+  letter-spacing: -0.03em;
 }
 
 #salary-link, #back-today {
@@ -202,8 +202,8 @@ h1, h2, h3, .hero-num, .amt, .stat b, .debt-top b, .compare-num, .brand strong {
   margin: 0;
   font-size: 0.75rem;
   font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-transform: none;
   color: var(--lime);
 }
 
@@ -217,15 +217,15 @@ h1, h2, h3, .hero-num, .amt, .stat b, .debt-top b, .compare-num, .brand strong {
 
 .hero-num, .compare-num {
   margin: 6px 0 8px;
-  font-size: clamp(2.8rem, 12vw, 4.4rem);
+  font-size: clamp(1.7rem, 6vw, 2.3rem);
   line-height: 0.92;
   letter-spacing: -0.05em;
   font-variant-numeric: tabular-nums;
 }
 
-.compare-num { font-size: clamp(2rem, 7vw, 2.8rem); }
+.compare-num { font-size: clamp(1.35rem, 4vw, 1.8rem); }
 
-.hero-text { font-size: clamp(2rem, 8vw, 3rem); }
+.hero-text { font-size: clamp(1.35rem, 4vw, 1.8rem); }
 
 .detail, .hint, .meta { color: var(--muted); }
 .detail { margin: 0; }
@@ -233,7 +233,7 @@ h1, h2, h3, .hero-num, .amt, .stat b, .debt-top b, .compare-num, .brand strong {
 
 h2 {
   margin: 0 0 12px;
-  font-size: 1.45rem;
+  font-size: 1.15rem;
   letter-spacing: -0.03em;
 }
 
@@ -255,8 +255,7 @@ h2 {
   color: var(--muted);
   font-size: 0.75rem;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  color: var(--muted);
 }
 
 .stat b {
@@ -314,8 +313,6 @@ h2 {
   font-size: 0.82rem;
   font-weight: 700;
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 
 input[type="text"],

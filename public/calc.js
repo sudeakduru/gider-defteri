@@ -209,9 +209,9 @@
     if (!summary.hasIncome) {
       return {
         tone: "setup",
-        eyebrow: "önce bu",
+        eyebrow: "Önce bu",
         amount: null,
-        amountText: "gelirini yaz",
+        amountText: "Gelirini yaz",
         detail: "Maaşını yaz. O ay başka yerden para geldiyse onu da ekle. Limit ancak ondan sonra gerçek olur.",
         avoid,
       };
@@ -220,7 +220,7 @@
     if (summary.when === "current" && summary.committedOver) {
       return {
         tone: "bad",
-        eyebrow: "bugün dur",
+        eyebrow: "Bugün dur",
         amount: 0,
         detail: `Sabit gider ve taksit, eline geçenden ${formatMoney(Math.abs(summary.variableBudget))} fazla. Harcayacak pay yok.`,
         avoid,
@@ -231,7 +231,7 @@
       const second = avoidText || "Bugün yeni bir şey alma.";
       return {
         tone: "bad",
-        eyebrow: "limit bitti",
+        eyebrow: "Limit bitti",
         amount: 0,
         detail: `${formatMoney(Math.abs(summary.remaining))} açık var. ${second}`,
         avoid,
@@ -249,7 +249,7 @@
       else bits.push("Bunu geçmezsen ayı artıda kapatırsın.");
       return {
         tone: summary.ahead || avoid.length ? "warn" : "ok",
-        eyebrow: "bugünlük tavan",
+        eyebrow: "Bugünlük tavan",
         amount: summary.dailyAllowance,
         detail: bits.join(" "),
         avoid,
@@ -259,7 +259,7 @@
     const closed = summary.overspent || summary.committedOver;
     return {
       tone: closed ? "bad" : "ok",
-      eyebrow: closed ? "açık" : summary.when === "future" ? "ayrılan pay" : "ay sonu",
+      eyebrow: closed ? "Açık" : summary.when === "future" ? "Ayrılan pay" : "Ay sonu",
       amount: Math.abs(summary.remaining),
       detail:
         summary.when === "future"

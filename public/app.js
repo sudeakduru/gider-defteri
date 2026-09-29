@@ -14,6 +14,7 @@ const {
 } = window.GiderCalc;
 
 const STORAGE_KEY = "gider-defteri-v1";
+const SESSION_KEY = "gider-oturum";
 const UI_KEY = "gider-defteri-ui";
 
 const CATEGORIES = [
@@ -156,6 +157,14 @@ function isBlankLedger(data) {
 
 function saveState() {
   if (!currentUser) return;
+  if (currentUser.provider === "google" || currentUser.provider === "apple") {
+    try {
+      localStorage.setItem(accountKey(currentUser), JSON.stringify(state));
+    } catch {
+      toast("Kayıt bu tarayıcıya yazılamadı.");
+    }
+    return;
+  }
   if (currentUser.provider === "local") {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -166,6 +175,142 @@ function saveState() {
   }
   const snapshot = JSON.parse(JSON.stringify(state));
   saveChain = saveChain.then(() => persistLedger(snapshot)).catch(() => {});
+}
+
+function accountKey(user) {
+  return `gider-defteri:${user.provider}:${user.id}`;
+}
+
+function readSession() {
+  try {
+    const data = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
+    if (!data?.id || (data.provider !== "google" && data.provider !== "apple")) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function parseJwt(token) {
+  const part = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+  const json = decodeURIComponent(atob(part).split("").map((char) => `%${char.charCodeAt(0).toString(16).padStart(2, "0")}`).join(""));
+  return JSON.parse(json);
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[src="${src}"]`);
+    if (existing) {
+      if (existing.dataset.ready === "1") resolve();
+      else existing.addEventListener("load", () => resolve(), { once: true });
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.onload = () => {
+      script.dataset.ready = "1";
+      resolve();
+    };
+    script.onerror = () => reject(new Error("script"));
+    document.head.appendChild(script);
+  });
+}
+
+function authConfig() {
+  return window.GIDER_CONFIG || {};
+}
+
+function enterClientAccount(user) {
+  currentUser = {
+    id: user.id,
+    email: user.email || "",
+    name: user.name || user.email || "Hesap",
+    provider: user.provider,
+  };
+  localStorage.setItem(SESSION_KEY, JSON.stringify(currentUser));
+  try {
+    const raw = localStorage.getItem(accountKey(currentUser));
+    state = raw ? normalizeState(JSON.parse(raw)) : defaultState();
+  } catch {
+    state = defaultState();
+  }
+  if (isBlankLedger(state)) {
+    const legacy = loadState();
+    if (!isBlankLedger(legacy)) {
+      state = legacy;
+      saveState();
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  }
+  document.getElementById("gate").hidden = true;
+  document.getElementById("app").hidden = false;
+  const logout = document.getElementById("logout");
+  if (logout) logout.hidden = false;
+  render();
+}
+
+async function startGoogle() {
+  const clientId = authConfig().googleClientId;
+  if (!clientId) {
+    showGate("Google kaydı için bir Google istemci anahtarı gerekiyor. Anahtar eklenince bu düğme hesabı açar.", { google: true, apple: true });
+    return;
+  }
+  await loadScript("https://accounts.google.com/gsi/client");
+  const client = window.google.accounts.oauth2.initTokenClient({
+    client_id: clientId,
+    scope: "openid email profile",
+    prompt: "select_account",
+    callback: async (tokenResponse) => {
+      if (!tokenResponse.access_token) {
+        showGate("Google girişi tamamlanamadı. Tekrar dene.", { google: true, apple: true });
+        return;
+      }
+      const profile = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+        headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
+      }).then((response) => response.json());
+      if (!profile.sub) {
+        showGate("Google hesabı okunamadı.", { google: true, apple: true });
+        return;
+      }
+      enterClientAccount({
+        id: profile.sub,
+        email: profile.email || "",
+        name: profile.name || profile.email || "Google hesabı",
+        provider: "google",
+      });
+    },
+  });
+  client.requestAccessToken();
+}
+
+async function startApple() {
+  const clientId = authConfig().appleClientId;
+  if (!clientId) {
+    showGate("Apple kaydı için bir Apple istemci anahtarı gerekiyor. Anahtar eklenince bu düğme hesabı açar.", { google: true, apple: true });
+    return;
+  }
+  await loadScript("https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/tr_TR/appleid.auth.js");
+  window.AppleID.auth.init({
+    clientId,
+    scope: "name email",
+    redirectURI: authConfig().appleRedirectURI || location.href.split("?")[0],
+    usePopup: true,
+  });
+  try {
+    const result = await window.AppleID.auth.signIn();
+    const payload = parseJwt(result.authorization.id_token);
+    const given = result.user?.name;
+    const name = [given?.firstName, given?.lastName].filter(Boolean).join(" ");
+    enterClientAccount({
+      id: payload.sub,
+      email: payload.email || "",
+      name: name || payload.email || "Apple hesabı",
+      provider: "apple",
+    });
+  } catch {
+    showGate("Apple girişi tamamlanamadı. Tekrar dene.", { google: true, apple: true });
+  }
 }
 
 async function persistLedger(snapshot) {
@@ -267,7 +412,7 @@ function expenseForm() {
   const selected = editing ? editing.category : ui.category;
   return `
     <form id="expense-form" class="card form" novalidate>
-      <h2>${editing ? "harcamayı düzelt" : "bugün ne gitti?"}</h2>
+      <h2>${editing ? "Harcamayı düzelt" : "Bugün ne gitti?"}</h2>
       <label class="field">Tutar
         <input name="amount" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Örn. 250" value="${esc(moneyToInput(editing?.amount))}">
       </label>
@@ -374,7 +519,7 @@ function trackedMonths() {
 
 function topCategory(data) {
   const top = Object.entries(data.byCategory).sort((a, b) => b[1] - a[1])[0];
-  if (!top) return "henüz yok";
+  if (!top) return "Henüz yok";
   return `${catName(CATEGORIES, top[0])} ${formatMoney(top[1])}`;
 }
 
@@ -423,20 +568,20 @@ function renderDashboard() {
   return `
     <div class="stack">
       <section class="card">
-        <h2>aylara bak</h2>
+        <h2>Aylara bak</h2>
         <p class="hint">Bir aya bas. Hemen önceki ay da yanında durur, kıyasla.</p>
         <div class="month-pills">${pills}</div>
       </section>
       <section class="card">
-        <h2>harcama grafiği</h2>
+        <h2>Harcama grafiği</h2>
         <div class="cols">${bars}</div>
       </section>
       <p class="delta">${esc(deltaText)}</p>
       <div class="compare">
-        ${compareCard(ui.month, selected, "seçili ay")}
-        ${compareCard(previousMonth, previous, "bir önceki")}
+        ${compareCard(ui.month, selected, "Seçili ay")}
+        ${compareCard(previousMonth, previous, "Bir önceki")}
       </div>
-      <button type="button" class="btn btn-primary" data-nav="overview">bu ayın günlüğüne geç</button>
+      <button type="button" class="btn btn-primary" data-nav="overview">Bu ayın günlüğüne geç</button>
     </div>
   `;
 }
@@ -494,7 +639,7 @@ function renderOverview() {
           <article class="stat ${data.overspent ? "bad" : ""}"><span>Bu ay harcanan</span><b>${esc(formatMoney(data.spent))}</b></article>
         </div>
         <section class="card">
-          <h2>para nereye gidiyor</h2>
+          <h2>Para nereye gidiyor</h2>
           ${data.extraTotal > 0 ? `<p class="hint">Maaş ${esc(formatMoney(data.salary))} + bu ay ekstra ${esc(formatMoney(data.extraTotal))}.</p>` : ""}
           <div class="split" aria-hidden="true">${bar}</div>
           <ul class="legend">${legend}</ul>
@@ -504,7 +649,7 @@ function renderOverview() {
       ${categories.length ? `<section class="card"><h2>Kategoriler</h2>${categoryHtml}</section>` : ""}
       <section class="card">
         <div class="section-head">
-          <h2>son harcamalar</h2>
+          <h2>Son harcamalar</h2>
           ${recent.length ? '<button type="button" class="linkish" data-nav="expenses">Tümü</button>' : ""}
         </div>
         ${recent.length ? `<ul class="entries">${recent.map(expenseItem).join("")}</ul>` : '<p class="empty">Bu ay daha bi şey yok. Yukarıdan yaz.</p>'}
@@ -620,7 +765,7 @@ function extraForm() {
   const monthName = monthTitle(editing?.month || ui.month);
   return `
     <form id="extra-form" class="card form" novalidate>
-      <h2>${editing ? "ekstra geliri düzelt" : "ekstra para geldi mi?"}</h2>
+      <h2>${editing ? "Ekstra geliri düzelt" : "Ekstra para geldi mi?"}</h2>
       <p class="hint">Freelance, ikramiye, satılan bir şey. Bu kayıt ${esc(monthName)} ayına yazılır, maaşın üstüne eklenir.</p>
       <label class="field">Nereden
         <input name="name" maxlength="40" autocomplete="off" placeholder="Örn. Freelance" value="${esc(editing?.name || "")}">
@@ -643,7 +788,7 @@ function renderSettings() {
   return `
     <div class="stack">
       <form id="salary-form" class="card form" novalidate>
-        <h2>aylık net maaş</h2>
+        <h2>Aylık net maaş</h2>
         <p class="hint">Her ay eline geçen tutar. Üstüne o ay gelen ekstra para eklenir, sonra sabit gider ve taksit düşülür.</p>
         <label class="field">Tutar
           <input name="salary" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Örn. 45000" value="${esc(moneyToInput(state.salary))}">
@@ -666,7 +811,7 @@ function renderSettings() {
       </section>
       <section class="card">
         <h2>Yedek</h2>
-        <p class="hint">${currentUser?.provider === "local" ? "Kayıtlar bu tarayıcıda durur. Başka cihazda görmek için yedeği indir, orada içe aktar." : `Kayıtlar bu hesaba yazılır${currentUser?.email ? ` (${esc(currentUser.email)})` : ""}. İstediğin cihazdan aynı hesapla girince aynı defteri görürsün. Yine de arada bir yedek indir.`}</p>
+        <p class="hint">${currentUser?.provider === "google" || currentUser?.provider === "apple" ? `Bu defter ${esc(currentUser.name || "bu hesaba")} ait. Çıkış yapınca başka hesapla girince onun defteri açılır.` : currentUser?.provider === "local" ? "Kayıtlar bu tarayıcıda durur. Başka cihazda görmek için yedeği indir, orada içe aktar." : `Kayıtlar bu hesaba yazılır${currentUser?.email ? ` (${esc(currentUser.email)})` : ""}. İstediğin cihazdan aynı hesapla girince aynı defteri görürsün. Yine de arada bir yedek indir.`}</p>
         <div class="actions">
           <button type="button" class="btn btn-primary" data-export>Dışa aktar</button>
           <button type="button" class="btn btn-ghost" data-import>İçe aktar</button>
@@ -864,6 +1009,16 @@ function removeItem(listName, id, message) {
 }
 
 function onClick(event) {
+  if (event.target.closest("#login-google")) {
+    event.preventDefault();
+    startGoogle();
+    return;
+  }
+  if (event.target.closest("#login-apple")) {
+    event.preventDefault();
+    startApple();
+    return;
+  }
   const picked = event.target.closest("[data-pick-month]");
   if (picked) {
     ui.month = picked.dataset.pickMonth;
@@ -872,6 +1027,13 @@ function onClick(event) {
     return;
   }
   if (event.target.closest("#logout")) {
+    if (currentUser?.provider === "google" || currentUser?.provider === "apple") {
+      localStorage.removeItem(SESSION_KEY);
+      currentUser = null;
+      state = defaultState();
+      showGate("Çıkış yapıldı. Başka bir Google veya Apple hesabıyla girebilirsin.", { google: true, apple: true });
+      return;
+    }
     fetch("/api/logout", { method: "POST" }).finally(() => {
       location.href = "/";
     });
@@ -1043,25 +1205,26 @@ function showGate(message, providers) {
   if (dev) dev.hidden = !providers?.dev;
 }
 
-function openLocal() {
-  currentUser = { name: "bu tarayıcı", email: "", provider: "local" };
-  state = loadState();
-  document.getElementById("gate").hidden = true;
-  document.getElementById("app").hidden = false;
-  const logout = document.getElementById("logout");
-  if (logout) logout.hidden = true;
-  render();
+function openClientGate(message) {
+  currentUser = null;
+  document.getElementById("app").hidden = true;
+  showGate(message || "Google veya Apple hesabınla kaydol. Çıkış yapınca başka hesapla girebilirsin.", { google: true, apple: true });
 }
 
 async function boot() {
   const params = new URLSearchParams(location.search);
-  let me;
+  let me = null;
   try {
-    const response = await fetch("/api/me");
-    if (!response.ok) throw new Error("me");
-    me = await response.json();
+    const response = await fetch("/api/me", { headers: { Accept: "application/json" } });
+    const type = response.headers.get("content-type") || "";
+    if (response.ok && type.includes("json")) me = await response.json();
   } catch {
-    openLocal();
+    me = null;
+  }
+  if (!me) {
+    const session = readSession();
+    if (session) enterClientAccount(session);
+    else openClientGate("");
     return;
   }
   if (!me.user) {
