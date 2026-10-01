@@ -77,6 +77,14 @@ h1, h2, h3, .hero-num, .amt, .stat b, .debt-top b, .compare-num, .brand strong {
   letter-spacing: -0.04em;
 }
 
+.email-auth { text-align: left; margin-bottom: 8px; }
+.email-auth .btn { width: 100%; }
+.or-line {
+  margin: 14px 0 4px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 .login-note {
   margin: 0 0 12px;
   padding: 12px;

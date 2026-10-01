@@ -165,7 +165,7 @@ function saveState() {
     saveChain = saveChain.then(() => persistSupabase(snapshot)).catch(() => {});
     return;
   }
-  if (currentUser.provider === "google" || currentUser.provider === "apple") {
+  if (currentUser.provider === "google" || currentUser.provider === "apple" || currentUser.provider === "email") {
     try {
       localStorage.setItem(accountKey(currentUser), JSON.stringify(state));
     } catch {
@@ -284,7 +284,7 @@ function accountKey(user) {
 function readSession() {
   try {
     const data = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
-    if (!data?.id || (data.provider !== "google" && data.provider !== "apple")) return null;
+    if (!data?.id || !["google", "apple", "email"].includes(data.provider)) return null;
     return data;
   } catch {
     return null;
@@ -315,6 +315,68 @@ function loadScript(src) {
     script.onerror = () => reject(new Error("script"));
     document.head.appendChild(script);
   });
+}
+
+const ACCOUNTS_KEY = "gider-hesaplar";
+
+function readAccounts() {
+  try {
+    const data = JSON.parse(localStorage.getItem(ACCOUNTS_KEY) || "{}");
+    return data && typeof data === "object" ? data : {};
+  } catch {
+    return {};
+  }
+}
+
+function setLoginNote(message) {
+  const note = document.getElementById("login-note");
+  if (!note) return;
+  note.hidden = !message;
+  note.textContent = message || "";
+}
+
+async function hashPassword(password, salt) {
+  const bytes = new TextEncoder().encode(`${salt}:${password}`);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+async function submitEmailAccount(form) {
+  const email = form.email.value.trim().toLowerCase();
+  const password = form.password.value;
+  const mode = form.dataset.mode === "signup" ? "signup" : "login";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    setLoginNote("Geçerli bir e-posta yaz.");
+    return;
+  }
+  if (password.length < 6) {
+    setLoginNote("Şifre en az 6 karakter olmalı.");
+    return;
+  }
+  const accounts = readAccounts();
+  if (mode === "signup") {
+    if (accounts[email]) {
+      setLoginNote("Bu e-posta ile hesap var. Giriş yap.");
+      return;
+    }
+    const salt = crypto.randomUUID();
+    const id = crypto.randomUUID();
+    accounts[email] = { id, salt, hash: await hashPassword(password, salt) };
+    localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
+    enterClientAccount({ id, email, name: email, provider: "email" });
+    return;
+  }
+  const account = accounts[email];
+  if (!account) {
+    setLoginNote("Bu e-posta ile hesap yok. Önce kaydol.");
+    return;
+  }
+  const hash = await hashPassword(password, account.salt);
+  if (hash !== account.hash) {
+    setLoginNote("Şifre yanlış.");
+    return;
+  }
+  enterClientAccount({ id: account.id, email, name: email, provider: "email" });
 }
 
 function authConfig() {
@@ -1087,6 +1149,18 @@ function removeItem(listName, id, message) {
 }
 
 function onClick(event) {
+  if (event.target.closest("#email-toggle")) {
+    const form = document.getElementById("email-auth");
+    const submit = document.getElementById("email-submit");
+    const toggle = document.getElementById("email-toggle");
+    const signup = form.dataset.mode !== "signup";
+    form.dataset.mode = signup ? "signup" : "login";
+    submit.textContent = signup ? "Kaydol" : "Giriş yap";
+    toggle.textContent = signup ? "Hesabın var mı? Giriş yap" : "Hesabın yok mu? Kaydol";
+    form.password.autocomplete = signup ? "new-password" : "current-password";
+    setLoginNote("");
+    return;
+  }
   if (event.target.closest("#login-google")) {
     event.preventDefault();
     startGoogle();
@@ -1229,6 +1303,7 @@ function onSubmit(event) {
   else if (form.id === "debt-form") saveDebt(form);
   else if (form.id === "salary-form") saveSalary(form);
   else if (form.id === "extra-form") saveExtra(form);
+  else if (form.id === "email-auth") submitEmailAccount(form);
 }
 
 function onInput(event) {
